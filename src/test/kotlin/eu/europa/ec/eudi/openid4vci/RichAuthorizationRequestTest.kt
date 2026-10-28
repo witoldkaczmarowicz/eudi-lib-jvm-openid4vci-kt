@@ -276,6 +276,41 @@ class RichAuthorizationRequestTest {
             assert(authRequestPrepared.identifiersSentAsAuthDetails.isNotEmpty())
         }
 
+    @Test
+    fun `when additional authorization parameters are provided, then expect custom parameters included in the PAR request`() =
+        runTest {
+            val additionalAuthorizationParameters = mapOf("customParamKey" to "customParamValue")
+
+            val mockedKtorHttpClientFactory = mockedHttpClient(
+                authServerWellKnownMocker(),
+                parPostMocker { request ->
+                    val form = with(request) { parPostApplyAssertionsAndGetFormData(true) }
+                    assertTrue("Missing custom parameter") {
+                        form.formData["customParamKey"] == "customParamValue"
+                    }
+                },
+                RequestMocker(
+                    requestMatcher = endsWith("/.well-known/openid-credential-issuer", HttpMethod.Get),
+                    responseBuilder = {
+                        respond(
+                            content = getResourceAsText("well-known/openid-credential-issuer_no_scopes.json"),
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType to listOf("application/json")),
+                        )
+                    },
+                ),
+            )
+            val offer = credentialOffer(mockedKtorHttpClientFactory, CredentialOfferMixedDocTypes_AUTH_GRANT)
+            val issuer = Issuer.make(
+                config = OpenId4VCIConfiguration,
+                credentialOffer = offer,
+                httpClient = mockedKtorHttpClientFactory,
+            ).getIssuerOrThrow()
+
+            issuer.prepareAuthorizationRequest(additionalAuthorizationParameters = additionalAuthorizationParameters).getOrThrow()
+                .also { println(it) }
+        }
+
     private suspend fun credentialOffer(
         httpClient: HttpClient,
         credentialOfferStr: String,
